@@ -65,7 +65,6 @@ double solverForI_D(calculation* cal, jfet* fet, bool type) {
 
         iteration++;
     } while (fabs(I_DActual - I_DPrevius) > cal->solverTolerance && iteration < cal->solverMaxIteration);
-
     return I_DActual;
 }
 
@@ -161,13 +160,12 @@ int main() {
     *
     *  Example:
     *    -3.0    <=  V_GS    <=  0.0
-    *    0.0     <=  V_DS    <=  9.0
+    *    0.0     <=  V_DS    <=  10.0
     */
-    jfetOutputCharacteristicsMake(&value, -3.0, 0.0, 0.0, 9.0);
+    jfetOutputCharacteristicsMake(&value, -3.0, 0.0, 0.0, 10.0);
 
     // showing
     jfetOutputCharacteristicsShow(&value);
-
 
     return 0;
 }
