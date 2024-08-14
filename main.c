@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <math.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
 typedef struct _jfet {
     double BETA;
@@ -14,32 +16,36 @@ typedef struct _jfet {
 typedef struct _calculation {
     double V_DD;
     double V_DS;
+    double V_GS;
     double T;
     double T_ref;
     double V_GSStep;
+    double V_GSStepCount;
     double V_DSStep;
+    double V_DSStepCount;
     double solverTolerance;
     double solverMaxIteration;
 } calculation;
 
 typedef struct _characteristic {
-    double I_D;
-    double V_GS;
+    double** I_D;
+    double* V_GS;
+    double* V_DS;
 } characteristic;
 
 typedef struct _values {
-    jfet *_jfet;
-    calculation *_calculation;
-    characteristic *_characteristic;
+    jfet* _jfet;
+    calculation* _calculation;
+    characteristic* _characteristic;
 } values;
 
 double jfetOutputCharacteristics(double V_GS, double V_DS, double LAMBDA, double BETA, double V_TO) {
-    if (V_GS < V_TO)
-        return 0.0;
-    return (V_DS < (V_GS - V_TO)) ? BETA * ((V_GS - V_TO) * V_DS - 0.5 * pow(V_DS,2)) : BETA * pow(V_GS - V_TO, 2) * (1 + LAMBDA * V_DS);
+    return (V_DS < (V_GS - V_TO)) ? BETA * V_DS *(2 * (V_GS - V_TO) - V_DS)*(1 + LAMBDA * V_DS) : BETA * pow(V_GS - V_TO, 2) * (1 + LAMBDA * V_DS);
 }
 
-double solveI_D(calculation* cal, jfet* fet, double V_GSActual) {
+double solverForI_D(calculation* cal, jfet* fet, bool type) {
+    /* type:    0 - for transfer characteristic
+                1 - for output characteristics */
     double
         I_DActual = 0.0,
         I_DPrevius,
@@ -54,13 +60,68 @@ double solveI_D(calculation* cal, jfet* fet, double V_GSActual) {
     // Newton method
     do {
         I_DPrevius = I_DActual;
-        double tempV_DS = cal->V_DS - I_DActual * (fet->R_D + fet->R_S);
-        I_DActual = jfetOutputCharacteristics(V_GSActual, tempV_DS, fet->LAMBDA, BETACorrected, V_TOCorrected);
+        double tempV_DS = ((type) ? cal->V_DS : cal->V_DD) - I_DActual * (fet->R_D + fet->R_S);
+        I_DActual = jfetOutputCharacteristics(cal->V_GS, tempV_DS, fet->LAMBDA, BETACorrected, V_TOCorrected);
 
         iteration++;
     } while (fabs(I_DActual - I_DPrevius) > cal->solverTolerance && iteration < cal->solverMaxIteration);
 
     return I_DActual;
+}
+
+bool jfetOutputCharacteristicsMake(values* value, double V_GSLow, double V_GSUp, double V_DSLow, double V_DSUp) {
+    value->_calculation->V_GSStepCount = abs((int)((V_GSUp - V_GSLow)/value->_calculation->V_GSStep)) + 1;
+    value->_calculation->V_DSStepCount = abs((int)((V_DSUp - V_DSLow)/value->_calculation->V_DSStep)) + 1;
+    if (value->_calculation->V_GSStepCount < 1 || value->_calculation->V_DSStepCount < 1)
+        return false;
+    value->_characteristic->V_DS = (double *)calloc(value->_calculation->V_DSStepCount, sizeof(double));
+    value->_characteristic->V_GS = (double *)calloc(value->_calculation->V_GSStepCount, sizeof(double));
+    if (!value->_characteristic->V_DS || !value->_characteristic->V_GS)
+        return false;
+    // fill the V_GS vector
+    for (int i = 0 ; i < value->_calculation->V_GSStepCount ; i++) {
+        *(value->_characteristic->V_GS + i) = V_GSLow + (i * value->_calculation->V_GSStep);
+    }
+    // fill the V_DS vector
+    for (int i = 0 ; i < value->_calculation->V_DSStepCount ; i++) {
+        *(value->_characteristic->V_DS + i) = V_DSLow + (i * value->_calculation->V_DSStep);
+    }
+    // make and fill the I_D matrix
+    value->_characteristic->I_D = (double**)calloc(value->_calculation->V_DSStepCount, sizeof(double*));
+    if (!value->_characteristic->I_D)
+        return false;
+    for (int i = 0; i < value->_calculation->V_DSStepCount; ++i) {
+        value->_characteristic->I_D[i] = (double*)calloc(value->_calculation->V_GSStepCount, sizeof(double));
+        if (!value->_characteristic->I_D[i])
+            return false;
+    }
+    int i = 0, j;
+    for (double d = V_DSLow; d <= V_DSUp ; d += value->_calculation->V_DSStep) {
+        j = 0;
+        for (double g = V_GSLow ; g <= V_GSUp ; g += value->_calculation->V_GSStep) {
+            value->_calculation->V_DS = d;
+            value->_calculation->V_GS = g;
+            value->_characteristic->I_D[i][j] = solverForI_D(value->_calculation, value->_jfet, 1) * 1000;
+            j++;
+        }
+        i++;
+    }
+return true;
+}
+
+void jfetOutputCharacteristicsShow(values* value) {
+    printf ("There are in V and mA.\n\nV_DS\t");
+    for (int i = 0 ; i < value->_calculation->V_GSStepCount ; i++) {
+        printf("I_D(U_GS=%.1fV)\t", value->_characteristic->V_GS[i]);
+    }
+    printf("\n");
+    for (int i = 0 ; i < value->_calculation->V_DSStepCount ; i++) {
+        printf("%.2f\t", value->_characteristic->V_DS[i]);
+        for (int j = 0 ; j < value->_calculation->V_GSStepCount ; j++) {
+                printf("%.4f\t\t", value->_characteristic->I_D[i][j]);
+        }
+    printf("\n");
+    }
 }
 
 int main() {
@@ -79,7 +140,6 @@ int main() {
     // calculation setup
     calculation calc;
 
-    calc.V_DD = 10;
     calc.T = 26.85;
     calc.T_ref = 26.85;
     calc.V_GSStep = 1.0;
@@ -92,33 +152,22 @@ int main() {
 
     // collecting structure
     values value;
-    value._calculation = &calc;
     value._jfet = &_2N3819;
+    value._calculation = &calc;
     value._characteristic = &output;
 
+    /* calculating
+    *  jfetOutputCharacteristicsMake(values*, V_GSLow, V_GSUp, VDSLow, VDSUp)
+    *
+    *  Example:
+    *    -3.0    <=  V_GS    <=  0.0
+    *    0.0     <=  V_DS    <=  9.0
+    */
+    jfetOutputCharacteristicsMake(&value, -3.0, 0.0, 0.0, 9.0);
 
-    printf ("There are in V and mA.\n\n");
-
-    output.V_GS = -3.0;
-    printf("V_DS\t");
-    for (output.V_GS ; output.V_GS <= 0.0 ; output.V_GS += calc.V_GSStep) {
-        printf("I_D(U_GS=%.1fV)\t", output.V_GS);
-    }
-    printf("\n");
+    // showing
+    jfetOutputCharacteristicsShow(&value);
 
 
-    calc.V_DS = 0.0;
-    for (calc.V_DS ; calc.V_DS <= calc.V_DD ; calc.V_DS += calc.V_DSStep) {
-        printf("%.2f\t", calc.V_DS);
-        output.V_GS = -3.0;
-        for (output.V_GS ; output.V_GS <= 0.0 ; output.V_GS += calc.V_GSStep) {
-                double I_D;
-                //I_D = jfetOutputCharacteristics(output.V_GS, calc.V_DS, _2N3819.LAMBDA, _2N3819.BETA, _2N3819.V_TO);
-                I_D = solveI_D(&calc, &_2N3819, output.V_GS);
-                printf("%.4f\t\t", I_D * 1000); // I_D mA-ban
-        }
-        printf("\n");
-    }
-    //calculate_characteristic();
     return 0;
 }
