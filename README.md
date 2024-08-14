@@ -8,7 +8,7 @@ This C project calculates the output characteristics of a JFET based on a SPICE 
 
 ## Equations with optimization (in ohmic and saturation region)
 
-$$If (V_{DS} < (V_{GS} - V_{TO})), then: I_{D} = \beta' * (V_{GS} - V_{TO}')^2 * (1 + \lambda * V_{DS})$$
+If $$(V_{DS} < (V_{GS} - V_{TO}))&&, then: &&I_{D} = \beta' * (V_{GS} - V_{TO}')^2 * (1 + \lambda * V_{DS})$$
 
 
 $$V_{DS} = V_{DD} - I_{D} * (R_{D} + R_{S})$$
