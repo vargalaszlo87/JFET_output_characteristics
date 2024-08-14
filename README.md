@@ -1,4 +1,4 @@
-# JFET transfer characteristic.
+# JFET outpus characteristics
 
 This C project calculates the output characteristics of a JFET based on a SPICE model. In this case the model is the 2N3819 N-channel JFET. Optimization by Rd and Rs requires a nonlinear approximate solution. I use the newton method.
 
