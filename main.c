@@ -55,7 +55,7 @@ double solverForI_D(calculation* cal, jfet* fet, bool type) {
 
     // correction
     V_TOCorrected = fet->V_TO + fet->V_TOtc * (cal->T - cal->T_ref);
-    BETACorrected = fet->BETA * (1 + fet->BETA_tce * (cal->T - cal->T_ref));
+    BETACorrected = fet->BETA * exp(fet->BETA_tce * (cal->T - cal->T_ref));
 
     // Newton method
     do {
